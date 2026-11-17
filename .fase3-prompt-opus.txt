@@ -1,0 +1,128 @@
+NOTA DE MODELO: estás corriendo con Claude Opus 5.5 (--model opus). Ignora cualquier referencia a Fable en este prompt; todo el build se hace con Opus. No cambies de modelo.
+
+ACTUALIZACIÓN DE ESTADO (2026-11-16 ~07:15, lee esto primero, prevalece sobre el prompt):
+- La DB tiene 796 filas; 722 con pasa_filtro=1 (Ranker v2); estrellas 9x5★, 25x4★, 175x3★, 184x2★, 329x1★, 74 descartadas. Fase 2 YA está construida: cvgen.py + profile.json existen, python-docx 1.1.0 en .venv, y hay 3 CVs generados y verificados: JD Power Commercial Operations Analyst (id 200, LinkedIn; la 207 de Indeed comparte CV), SUNKSSD AI Automation & Agentic Systems Engineer (id 1197, Wellfound), itD Network Automation Engineer (id 495, LinkedIn; la 510 comparte CV).
+- El campo cvFile del CRM YA EXISTE (verificado por Fase 2 en ts-spaces/crm-empleo/server/src/schema.ts; updateVacancy lo acepta).
+- Esta sesión NO tiene acceso a las acciones del artefacto crm-empleo ni al navegador: registra cada resultado en logs/apply-crm-sync-YYYY-MM-DD.json (externalKey=url, status, appliedDate, cvVersion, cvFile, nextStep, notes) para que el agente principal lo aplique.
+- PILOTO REAL: el piloto lo ejecuta el AGENTE PRINCIPAL con su tarea de navegador y la sesión guardada (LinkedIn/Indeed); esta sesión no puede abrir el navegador. Tu trabajo: construir el módulo, correr el dry-run, y dejar el piloto 100% preparado (entrada en apply-queue.json + paquete completo + pasos exactos) para la vacante top con CV y flujo por formulario: JD Power Commercial Operations Analyst (LinkedIn, id 200). NO elijas SUNKSSD como piloto: pide aplicación por correo a info@sunkssd.io con GitHub y video/texto, no tiene formulario.
+- Dry-run: el prompt pide top 5 pero solo existen 3 CVs; la cola debe incluir los 3 con CV y reportar las 2 restantes como pendientes de Fase 2.
+
+# Build prompt — Fase 3: módulo de auto-apply
+# Ejecutar con Fable 5.2 vía Claude Code DESPUÉS del reset de límites (dom 15 nov 2026, 23:50 CST),
+# y DESPUÉS del build de Fase 2 (el auto-apply solo corre sobre vacantes con CV ya generado).
+# Comando:
+#   export PATH="/home/hatch/.npm-global/bin:$PATH" && cd /home/hatch/workspace/empleo-pipeline \
+#     && claude -p --model fable --allowedTools 'Bash,Edit,Write,Read,Glob,Grep' < .build-prompt-fase3-autoapply.md
+# Si Claude Code reporta límite de uso de 5 horas: DETENTE, no reintentes en bucle,
+# reporta la nueva hora de reset y termina.
+# Ventana Fable 5.2: hasta mar 17 nov 2026 ~18:41 CST.
+
+## Contexto (lee primero)
+- `DESIGN.md` (módulo 4, reglas, Fases), `ranking-rules.md`, `schema.sql`, `db.py`,
+  `filter_rank.py`, `.build-prompt-fase2-cv.md` (el módulo cuyo output consume este).
+- `~/workspace/custom-skills/ats_cv_per_vacancy/SKILL.md` (reglas de veracidad; su regla
+  antigua "deja el click final al usuario" está SUPERADA por la autorización de auto-apply).
+- **Auto-apply AUTORIZADO por Alex el 2026-11-15 18:48: aplicar directo en su nombre
+  y actualizar el CRM.** No es una decisión del builder: es una autorización expresa
+  del usuario, registrada en el diseño.
+- **Credenciales:** logins de LinkedIn e Indeed guardados en el navegador vía Secure
+  Vault el 2026-11-15 ~18:51. **NUNCA extraer contraseñas crudas a código, archivos,
+  logs o variables de entorno.** El módulo NO hace login por su cuenta.
+- **Precedente real (Alianza Corp, 2026-11-15 19:02):** aplicación por Indeed con la
+  sesión guardada del navegador: Indeed confirmó "Tu postulación se ha enviado", sin
+  folio, con email de confirmación prometido a isaac.alejandrorb@gmail.com; NO
+  aparecieron preguntas de filtrado del empleador, así que nada se inventó; Indeed
+  convirtió el .docx a PDF. Ese es el flujo que este módulo debe replicar.
+- Vacantes: `vacantes.db` (767 filas; 142 con pasa_filtro=1). CRM: artefacto
+  `crm-empleo`, acciones createVacancy / updateVacancy / importVacancies /
+  listVacancies. updateVacancy acepta: id (obligatorio), status, appliedDate,
+  cvVersion, nextStep, notes, location, modality, url, aristaId, aristaName,
+  salaryMinMxn, salaryMaxMxn, source, detectedDate, followUpDate, title, company.
+  El campo `cvFile` lo agrega el build del panel de embudo de las 23:55
+  (`crm-funnel-cv-resume`); verificar si existe al registrar (si no, poner el
+  nombre del archivo en `cvVersion` y en `nextStep`, y reportarlo como hueco).
+
+## Qué construir
+Un módulo `autoapply.py` (más `apply-queue.json` como formato de cola) que aplica
+automáticamente a vacantes filtradas, con el CV ya generado por Fase 2. Debe:
+
+1. **Selección.** Toma vacantes con pasa_filtro=1 y estado 'nueva', ordenadas por
+   score descendente, que YA tengan CV generado (cvVersion registrado en el CRM o
+   archivo en `~/workspace/cv/`). Sin CV, no se aplica: se marca pendiente de Fase 2
+   y se sigue con la siguiente. Límite por corrida: parámetro `--limit` (default 5);
+   límite diario configurable (default 10) para no disparar bloqueos por volumen.
+   Delays entre aplicaciones (configurables, default 60–180 s aleatorio).
+
+2. **Paquete de aplicación.** Por cada vacante, construye un paquete con todo lo que
+   el flujo de navegador necesita, sin credenciales: url de la vacante, título,
+   empresa, plataforma (fuente), ruta absoluta del .docx, datos del candidato para
+   formularios (nombre, e-mail, teléfono, LinkedIn, ubicación, autorización de trabajo
+   en México — solo datos ya verificados del perfil; nada inventado), y las respuestas
+   conocidas a preguntas frecuentes (ej. disponibilidad, modalidad remota).
+   Guarda la cola en `apply-queue.json` (una entrada por vacante, con estado
+   pendiente/aplicada/bloqueada/fallida y motivo).
+
+3. **Ejecución por el flujo de sesión guardada del navegador.** El módulo en sí NO
+   abre sesiones ni guarda contraseñas. Diseña la ejecución así:
+   - El módulo prepara la cola y el paquete, y expone un comando por aplicación
+     (`--run-queue`) que el operador (agente principal, con acceso a la tarea de
+     navegador y a la sesión guardada) ejecuta: abrir la URL, verificar que la sesión
+     de LinkedIn/Indeed siga válida, subir el .docx, completar el formulario con los
+     datos del paquete, y enviar.
+   - Si la sesión expiró o el sitio pide login/CAPTCHA/verificación: DETENER esa
+     aplicación, marcarla bloqueada con el motivo en el log y en el CRM, y seguir con
+     la siguiente. NUNCA intentar resolver CAPTCHAs por fuerza, ni reintentar logins,
+     ni usar credenciales fuera del flujo de sesión guardada.
+   - Orden de plataformas: LinkedIn Easy Apply e Indeed primero; ATS
+     (Greenhouse/Lever/Workable) después, con su propio flujo de formulario.
+   - Respetar los límites de cada sitio; no forzar accesos bloqueados.
+
+4. **Preguntas que solo Alex puede responder: DETENERSE, no inventar.** Si un
+   formulario pide algo que no está en el paquete (expectativas salariales, años en
+   una herramienta concreta, autorización/preguntas de elegibilidad, disponibilidad
+   de entrevista, etc.): NO responder, NO inventar, NO enviar. Marcar la vacante
+   como `pendiente-respuesta-Alex` (estado CRM sigue 'nueva'; anota la pregunta
+   exacta en `notes` y en `nextStep` = "Pregunta para Alex: <pregunta exacta>"),
+   registrarla en el log, y seguir con la siguiente vacante. El review diario le
+   presenta esas preguntas a Alex.
+
+5. **Registro tras aplicar.** Al confirmar el envío (texto de confirmación del sitio,
+   ej. "Tu postulación se ha enviado"):
+   - updateVacancy: status 'aplicada', appliedDate = fecha de hoy (YYYY-MM-DD),
+     cvVersion, cvFile si existe, nextStep = "Esperar respuesta de <empresa>;
+     revisar Indeed/LinkedIn y correo".
+   - Log en `logs/apply-YYYY-MM-DD.log`: vacante, plataforma, hora, texto de
+     confirmación, folio si lo hay (si no lo hay, decir "sin folio", no inventarlo).
+   - Si el envío falla: dejar estado 'nueva', anotar la causa en `notes`, seguir.
+   - Idempotente: nunca aplicar dos veces a la misma vacante (verificar estado en
+     el CRM antes de aplicar).
+
+6. **Modos.** `--dry-run` (construye la cola y valida que cada CV exista, sin enviar
+   nada); `--limit N` (lote real); `--vacante-id N` (una sola vacante).
+
+## Dependencias y huecos que Fable debe resolver (verificados sin Fable)
+- El mecanismo exacto de invocación de la tarea de navegador lo opera el agente
+  principal, no este módulo: Fable debe definir la interfaz entre `autoapply.py`
+  (cola + paquetes) y esa ejecución (qué recibe, qué devuelve, cómo se reporta el
+  resultado), sin asumir un navegador headless con la sesión del usuario y sin
+  guardar credenciales en ningún lado.
+- La validez de las sesiones guardadas de LinkedIn/Indeed debe comprobarse en
+  tiempo de ejecución (las sesiones expiran); el módulo debe tratar "sesión inválida"
+  como bloqueo, no como error fatal.
+- Dependencia de Fase 2: sin CV generado no hay aplicación (ver paso 1).
+- El campo `cvFile` del CRM depende del build de las 23:55 (ver Contexto).
+
+## Verificación (obligatoria antes de reportar)
+1. `--dry-run` con las 5 vacantes top por score: cola construida, todos los CVs
+   existen (generados por la verificación de Fase 2), ningún envío realizado.
+2. Piloto real de UNA vacante (la top por score con CV listo), con supervisión del
+   agente principal vía flujo de navegador: verificar envío, actualización del CRM
+   (aplicada + appliedDate + cvVersion/cvFile + nextStep) y entrada en el log.
+3. Prueba de bloqueo: simula (o documenta con una vacante real si aparece) el caso
+   de pregunta solo-para-Alex y verifica que queda pendiente sin inventar respuesta.
+4. Actualiza `README.md` con el uso del módulo y sus límites.
+5. Reporta: archivos creados, resultado del dry-run, resultado del piloto (vacante,
+   plataforma, confirmación), huecos resueltos y huecos que queden, y qué falta
+   para el primer lote real.
+6. NO apliques a más de la vacante piloto en la verificación. NO generes CVs en
+   este build (eso es Fase 2).

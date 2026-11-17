@@ -1,0 +1,5 @@
+{
+  "proxies": [
+    "http://USUARIO:CLAVE@HOST:PUERTO"
+  ]
+}

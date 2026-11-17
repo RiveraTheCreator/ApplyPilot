@@ -1,0 +1,20 @@
+# Datos personales y secretos — NUNCA se suben a GitHub
+vacantes.db
+*.db
+.venv/
+__pycache__/
+*.pyc
+logs/
+backups/
+proxy-config.json
+apply-config.json
+apply-queue.json
+apply-queue.json.lock
+profile.json
+cuentas-creadas.md
+cv-sunkssd-133.b64
+crm-import-*.json
+run_full.out
+viva/
+*.log
+.DS_Store

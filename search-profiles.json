@@ -1,0 +1,479 @@
+[
+  {
+    "name": "1_F1_AIAutomation_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"AI Automation Specialist\" OR \"Marketing Automation\" OR \"n8n\" OR \"workflow automation\")",
+    "location": "Mexico",
+    "country_indeed": "Mexico",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "2_F1_RevOps_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"Revenue Operations\" OR \"RevOps Analyst\" OR \"CRM Implementation\" OR \"HubSpot Operations\")",
+    "location": "Mexico",
+    "country_indeed": "Mexico",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "3_F1_OnboardingCS_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"Customer Onboarding Specialist\" OR \"Technical Customer Success\" OR \"Implementation Specialist\")",
+    "location": "Mexico",
+    "country_indeed": "Mexico",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "4_F1_LowCode_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"Low-Code Developer\" OR \"Internal Tools Developer\" OR \"No-Code Solutions Builder\")",
+    "location": "Mexico",
+    "country_indeed": "Mexico",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "5_F2_OpsAnalyst_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"Operations Analyst\" OR \"Business Operations Analyst\" OR \"Automation Analyst\")",
+    "location": "Mexico",
+    "country_indeed": "Mexico",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "6_F2_ProductOps_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"Product Operations Specialist\" OR \"Implementation Project Coordinator\" OR \"Technical Project Coordinator\")",
+    "location": "Mexico",
+    "country_indeed": "Mexico",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "7_F3_HospitalityTech_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"Hospitality Implementation Specialist\" OR \"Hotel Technology Consultant\" OR \"Hospitality Customer Success\")",
+    "location": "Mexico",
+    "country_indeed": "Mexico",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "8_F3_SolutionsEngineer_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"Solutions Engineer\" OR \"Implementation Consultant\" OR \"Technical Account Manager\")",
+    "location": "Mexico",
+    "country_indeed": "Mexico",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "9_F1_AIAgents_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI agents automation n8n",
+    "location": "Mexico",
+    "results_wanted": 50,
+    "easy_apply": true
+  },
+  {
+    "name": "10_F1_CRMAutomation_linkedin",
+    "site_name": "linkedin",
+    "search_term": "CRM automation API integrations",
+    "location": "Mexico",
+    "results_wanted": 50,
+    "easy_apply": true
+  },
+  {
+    "name": "11_F2_NetworkCloud_linkedin",
+    "site_name": "linkedin",
+    "search_term": "Network Engineer Junior Cloud Support AWS Linux",
+    "location": "Mexico",
+    "results_wanted": 50
+  },
+  {
+    "name": "12_F3_HospitalitySaaS_linkedin",
+    "site_name": "linkedin",
+    "search_term": "Hospitality Technology PMS Onboarding",
+    "location": "Remote",
+    "results_wanted": 50,
+    "easy_apply": true
+  },
+  {
+    "name": "13_F4_AITrainer_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI Trainer Technical Enablement Developer Educator",
+    "location": "Remote",
+    "results_wanted": 50
+  },
+  {
+    "name": "14_F4_KAMSaas_linkedin",
+    "site_name": "linkedin",
+    "search_term": "Account Manager SMB SaaS Customer Success",
+    "location": "Mexico",
+    "results_wanted": 50,
+    "easy_apply": true
+  },
+  {
+    "name": "15_F1_WhatsAppAutomation_linkedin",
+    "site_name": "linkedin",
+    "search_term": "WhatsApp automation CRM",
+    "location": "Mexico",
+    "results_wanted": 50
+  },
+  {
+    "name": "16_F1_MarketingAutomation_glassdoor",
+    "site_name": "glassdoor",
+    "search_term": "Marketing Automation Specialist",
+    "location": "Mexico City, Mexico",
+    "country_indeed": "Mexico",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "17_F2_RevOps_glassdoor",
+    "site_name": "glassdoor",
+    "search_term": "RevOps Analyst",
+    "location": "Mexico City, Mexico",
+    "country_indeed": "Mexico",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "18_F3_SolutionsConsultant_glassdoor",
+    "site_name": "glassdoor",
+    "search_term": "Implementation Consultant Solutions",
+    "location": "Mexico City, Mexico",
+    "country_indeed": "Mexico",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "19_F4_AIAdoption_glassdoor",
+    "site_name": "glassdoor",
+    "search_term": "AI Adoption Specialist",
+    "location": "Mexico City, Mexico",
+    "country_indeed": "Mexico",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "20_F2_DataOps_glassdoor",
+    "site_name": "glassdoor",
+    "search_term": "Data Operations Specialist Business Analyst",
+    "location": "Mexico City, Mexico",
+    "country_indeed": "Mexico",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "21_F1_AIAutomationCO_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Colombia",
+    "results_wanted": 25
+  },
+  {
+    "name": "22_F3_ImplementationCO_linkedin",
+    "site_name": "linkedin",
+    "search_term": "implementation specialist remote",
+    "location": "Colombia",
+    "results_wanted": 25
+  },
+  {
+    "name": "23_F1_AutomationImplCO_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"AI Automation\" OR \"Marketing Automation\" OR \"Implementation Specialist\" OR \"Revenue Operations\" OR \"Customer Onboarding\")",
+    "location": "Colombia",
+    "country_indeed": "Colombia",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "24_F1_AIAutomationAR_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Argentina",
+    "results_wanted": 25
+  },
+  {
+    "name": "25_F3_ImplementationAR_linkedin",
+    "site_name": "linkedin",
+    "search_term": "implementation specialist remote",
+    "location": "Argentina",
+    "results_wanted": 25
+  },
+  {
+    "name": "26_F1_AutomationImplAR_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"AI Automation\" OR \"Marketing Automation\" OR \"Implementation Specialist\" OR \"Revenue Operations\" OR \"Customer Onboarding\")",
+    "location": "Argentina",
+    "country_indeed": "Argentina",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "27_F3_ImplementationSpecialistAR_glassdoor",
+    "site_name": "glassdoor",
+    "search_term": "Implementation Specialist",
+    "location": "Buenos Aires, Argentina",
+    "country_indeed": "Argentina",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "28_F1_AIAutomationBR_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Brazil",
+    "results_wanted": 25
+  },
+  {
+    "name": "29_F3_ImplementationBR_linkedin",
+    "site_name": "linkedin",
+    "search_term": "implementation specialist remote",
+    "location": "Brazil",
+    "results_wanted": 25
+  },
+  {
+    "name": "30_F1_AutomationImplBR_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"AI Automation\" OR \"Marketing Automation\" OR \"Implementation Specialist\" OR \"Revenue Operations\" OR \"Automação de Marketing\" OR \"Implantação\")",
+    "location": "Brazil",
+    "country_indeed": "Brazil",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "31_F3_ImplementationSpecialistBR_glassdoor",
+    "site_name": "glassdoor",
+    "search_term": "Implementation Specialist",
+    "location": "Sao Paulo, Brazil",
+    "country_indeed": "Brazil",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "32_F1_AIAutomationCL_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Chile",
+    "results_wanted": 25
+  },
+  {
+    "name": "33_F3_ImplementationCL_linkedin",
+    "site_name": "linkedin",
+    "search_term": "implementation specialist remote",
+    "location": "Chile",
+    "results_wanted": 25
+  },
+  {
+    "name": "34_F1_AutomationImplCL_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"AI Automation\" OR \"Marketing Automation\" OR \"Implementation Specialist\" OR \"Revenue Operations\" OR \"Customer Onboarding\")",
+    "location": "Chile",
+    "country_indeed": "Chile",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "35_F1_AIAutomationPE_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Peru",
+    "results_wanted": 25
+  },
+  {
+    "name": "36_F3_ImplementationPE_linkedin",
+    "site_name": "linkedin",
+    "search_term": "implementation specialist remote",
+    "location": "Peru",
+    "results_wanted": 25
+  },
+  {
+    "name": "37_F1_AutomationImplPE_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"AI Automation\" OR \"Marketing Automation\" OR \"Implementation Specialist\" OR \"Revenue Operations\" OR \"Customer Onboarding\")",
+    "location": "Peru",
+    "country_indeed": "Peru",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "38_F1_AIAutomationEC_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Ecuador",
+    "results_wanted": 25
+  },
+  {
+    "name": "39_F1_AutomationImplEC_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"AI Automation\" OR \"Marketing Automation\" OR \"Implementation Specialist\" OR \"Revenue Operations\" OR \"Customer Onboarding\")",
+    "location": "Ecuador",
+    "country_indeed": "Ecuador",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "40_F1_AIAutomationUY_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Uruguay",
+    "results_wanted": 25
+  },
+  {
+    "name": "41_F1_AutomationImplUY_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"AI Automation\" OR \"Marketing Automation\" OR \"Implementation Specialist\" OR \"Revenue Operations\" OR \"Customer Onboarding\")",
+    "location": "Uruguay",
+    "country_indeed": "Uruguay",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "42_F1_AIAutomationPY_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Paraguay",
+    "results_wanted": 25
+  },
+  {
+    "name": "43_F1_AIAutomationBO_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Bolivia",
+    "results_wanted": 25
+  },
+  {
+    "name": "44_F1_AIAutomationGT_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Guatemala",
+    "results_wanted": 25
+  },
+  {
+    "name": "45_F1_AIAutomationCR_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Costa Rica",
+    "results_wanted": 25
+  },
+  {
+    "name": "46_F1_AutomationImplCR_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"AI Automation\" OR \"Marketing Automation\" OR \"Implementation Specialist\" OR \"Revenue Operations\" OR \"Customer Onboarding\")",
+    "location": "Costa Rica",
+    "country_indeed": "Costa Rica",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "47_F1_AIAutomationPA_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Panama",
+    "results_wanted": 25
+  },
+  {
+    "name": "48_F1_AutomationImplPA_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"AI Automation\" OR \"Marketing Automation\" OR \"Implementation Specialist\" OR \"Revenue Operations\" OR \"Customer Onboarding\")",
+    "location": "Panama",
+    "country_indeed": "Panama",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "49_F1_AIAutomationDO_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Dominican Republic",
+    "results_wanted": 25
+  },
+  {
+    "name": "50_F1_AIAutomationUS_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "United States",
+    "results_wanted": 25
+  },
+  {
+    "name": "51_F3_ImplementationUS_linkedin",
+    "site_name": "linkedin",
+    "search_term": "implementation specialist remote",
+    "location": "United States",
+    "results_wanted": 25
+  },
+  {
+    "name": "52_F1_AutomationImplUS_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"AI Automation\" OR \"Marketing Automation\" OR \"Implementation Specialist\" OR \"Revenue Operations\" OR \"Customer Onboarding\")",
+    "location": "United States",
+    "country_indeed": "USA",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "53_F3_ImplementationSpecialistUS_glassdoor",
+    "site_name": "glassdoor",
+    "search_term": "Implementation Specialist",
+    "location": "New York, NY",
+    "country_indeed": "USA",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "54_F1_AIAutomationUS_zip_recruiter",
+    "site_name": "zip_recruiter",
+    "search_term": "AI Automation Specialist",
+    "location": "New York, NY",
+    "country_indeed": "USA",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "55_F1_AIAutomationCA_linkedin",
+    "site_name": "linkedin",
+    "search_term": "AI automation remote",
+    "location": "Canada",
+    "results_wanted": 25
+  },
+  {
+    "name": "56_F3_ImplementationCA_linkedin",
+    "site_name": "linkedin",
+    "search_term": "implementation specialist remote",
+    "location": "Canada",
+    "results_wanted": 25
+  },
+  {
+    "name": "57_F1_AutomationImplCA_indeed",
+    "site_name": "indeed",
+    "search_term": "(\"AI Automation\" OR \"Marketing Automation\" OR \"Implementation Specialist\" OR \"Revenue Operations\" OR \"Customer Onboarding\")",
+    "location": "Canada",
+    "country_indeed": "Canada",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "58_F3_ImplementationSpecialistCA_glassdoor",
+    "site_name": "glassdoor",
+    "search_term": "Implementation Specialist",
+    "location": "Toronto, ON",
+    "country_indeed": "Canada",
+    "is_remote": true,
+    "results_wanted": 25
+  },
+  {
+    "name": "59_F1_AIAutomationCA_zip_recruiter",
+    "site_name": "zip_recruiter",
+    "search_term": "AI Automation Specialist",
+    "location": "Toronto, ON",
+    "country_indeed": "Canada",
+    "is_remote": true,
+    "results_wanted": 25
+  }
+]

@@ -1,0 +1,98 @@
+{
+  "version": "2.0.0",
+  "updated": "2026-11-16",
+  "updated_by": "claude-code (build Ranker v2)",
+  "authority": "ranking-rules.md v2 (Alex, 2026-11-15 21:29). Cualquier cambio aquí se anota en filter-changelog.md y se reporta en el review diario.",
+
+  "hard_filter": {
+    "_doc": "Único descarte: 100% presencial sin componente remoto ni híbrido. No cambiar a true otros descartes sin orden explícita de Alex.",
+    "discard_onsite_only": true
+  },
+
+  "weights": {
+    "_doc": "Puntos del score 0-100 (misma base que v1; sueldo baja de 15 a 8). Máximo teórico 88, tope 100.",
+    "keywords_max": 40,
+    "keyword_title": 10,
+    "keyword_desc": 5,
+    "salary_target": 8,
+    "salary_unknown": 4,
+    "salary_slightly_below": 3,
+    "salary_open_min_below": 2,
+    "salary_low": 0,
+    "recent": 10,
+    "recent_unknown": 5,
+    "recent_days": 7,
+    "fast_process": 10,
+    "hospitality": 10,
+    "hospitality_arista": 6,
+    "priority": 5,
+    "exp_low": 5,
+    "exp_none": 3,
+    "exp_mid": 1,
+    "exp_high": 0
+  },
+
+  "salary": {
+    "_doc": "Ratios contra el mínimo objetivo (keywords.json filters.pay_target_mxn[0] = 35,000 MXN/mes). Desconocido = neutro, nunca inventado.",
+    "slightly_below_ratio": 0.85,
+    "low_ratio": 0.6
+  },
+
+  "stars": {
+    "_doc": "Umbrales de estrellas (ranking-rules.md v2). fit = puntos de keywords (0-40).",
+    "fit_strong_min": 20,
+    "fit_good_min": 10,
+    "fit_weak_min": 5,
+    "base": {
+      "remoto": {"strong": 4, "good": 4, "weak": 3, "none": 2},
+      "hibrido": {"strong": 3, "good": 3, "weak": 2, "none": 1},
+      "no_especificada": {"strong": 3, "good": 3, "weak": 2, "none": 1}
+    },
+    "five_star_requires": "remoto + fit strong + (sueldo >= objetivo o proceso rápido o publicación reciente)",
+    "salary_slightly_below_cap": 4,
+    "salary_low_cap": 3,
+    "salary_clearly_below_cap": 2,
+    "friction_cap_remote": 2,
+    "non_remote_penalty": 1
+  },
+
+  "keywords": {
+    "_doc": "on/off de keywords para el score. Listar aquí la keyword exacta de keywords.json para apagarla (no se borra de keywords.json).",
+    "disabled": []
+  },
+
+  "countries": [
+    {"code": "MX", "name": "Mexico", "aliases": ["mexico", "mx", "ciudad de mexico", "cdmx", "mexico city", "monterrey", "guadalajara", "desde casa, mexico"], "indeed": "Mexico", "glassdoor_location": "Mexico City, Mexico", "linkedin_location": "Mexico"},
+    {"code": "CO", "name": "Colombia", "aliases": ["colombia", "bogota", "medellin"], "indeed": "Colombia", "linkedin_location": "Colombia"},
+    {"code": "AR", "name": "Argentina", "aliases": ["argentina", "buenos aires"], "indeed": "Argentina", "glassdoor_location": "Buenos Aires, Argentina", "linkedin_location": "Argentina"},
+    {"code": "BR", "name": "Brazil", "aliases": ["brazil", "brasil", "sao paulo"], "indeed": "Brazil", "glassdoor_location": "Sao Paulo, Brazil", "linkedin_location": "Brazil"},
+    {"code": "CL", "name": "Chile", "aliases": ["chile", "santiago"], "indeed": "Chile", "linkedin_location": "Chile"},
+    {"code": "PE", "name": "Peru", "aliases": ["peru", "lima"], "indeed": "Peru", "linkedin_location": "Peru"},
+    {"code": "EC", "name": "Ecuador", "aliases": ["ecuador", "quito", "guayaquil"], "indeed": "Ecuador", "linkedin_location": "Ecuador"},
+    {"code": "UY", "name": "Uruguay", "aliases": ["uruguay", "montevideo"], "indeed": "Uruguay", "linkedin_location": "Uruguay"},
+    {"code": "PY", "name": "Paraguay", "aliases": ["paraguay", "asuncion"], "linkedin_location": "Paraguay"},
+    {"code": "BO", "name": "Bolivia", "aliases": ["bolivia", "la paz", "santa cruz de la sierra"], "linkedin_location": "Bolivia"},
+    {"code": "GT", "name": "Guatemala", "aliases": ["guatemala"], "linkedin_location": "Guatemala"},
+    {"code": "CR", "name": "Costa Rica", "aliases": ["costa rica", "san jose, costa rica"], "indeed": "Costa Rica", "linkedin_location": "Costa Rica"},
+    {"code": "PA", "name": "Panama", "aliases": ["panama"], "indeed": "Panama", "linkedin_location": "Panama"},
+    {"code": "DO", "name": "Dominican Republic", "aliases": ["dominican republic", "republica dominicana", "santo domingo"], "linkedin_location": "Dominican Republic"},
+    {"code": "US", "name": "United States", "aliases": ["united states", "usa", "u.s.", "us"], "indeed": "USA", "glassdoor_location": "New York, NY", "zip_location": "New York, NY", "linkedin_location": "United States"},
+    {"code": "CA", "name": "Canada", "aliases": ["canada", "toronto", "vancouver", "montreal"], "indeed": "Canada", "glassdoor_location": "Toronto, ON", "zip_location": "Toronto, ON", "linkedin_location": "Canada"}
+  ],
+
+  "health": {
+    "_doc": "Umbrales de las alertas de logs/filter-health-YYYY-MM-DD.json.",
+    "pass_rate_min": 0.6,
+    "pass_rate_max": 0.97,
+    "expected_sources": ["linkedin", "indeed", "glassdoor", "zip_recruiter"],
+    "source_min_rows_for_pass_alert": 5,
+    "keyword_zero_days": 3,
+    "drop_reason_spike_factor": 2.0,
+    "drop_reason_spike_abs": 0.1,
+    "drop_reason_min_count": 5,
+    "new_rows_drop_ratio": 0.5,
+    "history_days": 7,
+    "five_star_share_max": 0.3,
+    "top_stars_min": 1
+  }
+}
