@@ -518,6 +518,74 @@ disponibilidad y un video/texto que solo Alex puede dar. Lo que no está en `res
 sensibles) **detiene** la aplicación; nunca se inventa. Para desbloquear una respuesta recurrente,
 Alex la confirma y se agrega a `respuestas_conocidas` con su fuente.
 
+## Monitoreo (`monitor.py`)
+
+Vigila el pipeline completo de punta a punta (scraper → ranker → CVs → apply → embudo/CRM)
+y dice dónde optimizar el embudo. La métrica que manda: **entrevistas**. stdlib únicamente.
+
+```bash
+python3 monitor.py                    # hoy (hora MX): JSON completo + resumen
+python3 monitor.py --resumen          # solo el resumen humano (lo consume el review diario)
+python3 monitor.py --date 2026-11-16  # reprocesa un día (cambia el día de referencia; DB y cola = estado actual)
+python3 monitor.py --db otra.db --queue otra-cola.json --logs-dir /tmp/logs   # sandbox
+python3 test_monitor.py               # pruebas en /tmp (DB y JSONs sintéticos; no toca nada real)
+```
+
+`run_daily.py` lo llama al final (try/except): las líneas `MONITOR …` del log diario son el
+resumen. Si el monitor falla, la corrida sigue y su exit code no cambia.
+
+**Solo lectura.** `vacantes.db` se abre con URI `mode=ro`; `apply-queue.json` solo se lee. El único
+archivo que escribe es `logs/monitor-YYYY-MM-DD.json` (la última corrida del día sobrescribe).
+No llama a Firecrawl ni a ningún servicio: los créditos se leen de los logs.
+
+**Entradas** (si una falta → `sin_datos` en `fuentes` y la corrida sigue): `vacantes.db`
+(+ `cv_generaciones`), `apply-queue.json`, `apply-config.json › limites`, `logs/YYYY-MM-DD.log`
+(líneas `FALLO`, `Créditos Firecrawl`), `logs/firecrawl-*YYYY-MM-DD*.log`,
+`logs/filter-health-*.json` (sus `alerts` se reutilizan; ojo: `filter_health.py` fecha el archivo en
+UTC, así que el monitor toma el más reciente generado durante el día local), `logs/cv-coverage-*.json`,
+`logs/cv-crm-sync-*.json`, `logs/apply-crm-sync-*.json`, `logs/apply-*.log` y el export del CRM.
+
+**Estado del CRM: `logs/crm-state-YYYY-MM-DD.json`.** Lo exporta el agente principal desde
+crm-empleo (`listVacancies`); el monitor nunca lo inventa. Si no existe: check `crm_export` en
+`atencion` ("sin export del CRM") y el embudo se arma con `vacantes.db` + cola (`confianza: baja`:
+respuestas/entrevistas registradas solo en el CRM no se ven). Formato (lista, o `{"vacancies": [...]}`):
+
+```json
+{"vacancies": [{"vacante_id": 200, "externalKey": "https://...", "title": "...", "company": "...",
+  "status": "nueva | aplicada | respuesta | entrevista | rechazada", "appliedDate": "2026-11-16",
+  "responseDate": null, "interviewDate": null, "rejectedDate": null, "cvFile": "cv-....docx"}]}
+```
+
+`vacante_id` es opcional si `externalKey` = url de la vacante en la base.
+
+**Chequeos** (cada uno `ok` / `atencion` / `critico` / `sin_datos`, con `fuente` y `evidence`):
+
+| Etapa | Checks |
+|---|---|
+| scraper | filas nuevas hoy por fuente; `fuente_cero:<fuente>` (0 dos días seguidos); búsquedas fallidas por sitio y causa; créditos Firecrawl (< 300 atención, < 100 crítico) |
+| ranker | tasa de pase y estrellas (DB); filas sin rankear; alertas del filter-health del día (reutilizadas tal cual) |
+| cvs | % de 4★+ con CV (< 50% atención) y % de las que pasan; pendientes por falta de descripción (cuántas de LinkedIn); CVs generados sin vincular al CRM |
+| apply | cola por estado; cupo diario usado/restante; bloqueadas por motivo; `en_curso` sin reporte (> 24 h = **crítico**); `pendiente-respuesta-Alex` envejeciendo (≥ 1 día atención, ≥ 3 crítico) |
+| embudo | export del CRM; umbrales 15/25; 4★+ en `nueva` > 7 días sin tocar |
+
+**Umbrales de optimización** (DESIGN.md › Optimización): **15 aplicaciones sin respuesta →
+revisar CV/filtros** (aviso a las 12); **25 sin entrevista → cambio de estrategia** (aviso a las 20).
+Se cuentan aplicaciones enviadas (aplicada + respuesta + entrevista + rechazada con fecha de
+aplicación), únicas por empresa+título. Un **rechazo cuenta como respuesta** (umbral 15) y como
+**sin entrevista** (umbral 25). La conversión `nueva→aplicada` se mide sobre vacantes **4★+**.
+
+**Optimizador:** tabla por arista (aplicadas, respuestas, entrevistas, tasas; < 5 aplicadas =
+"muestra insuficiente"; una aplicación cuenta en cada arista de la vacante), keywords muertas
+(≥ 10 aplicaciones y 0 respuestas), mayor fuga (peor transición con ≥ 5 en el denominador;
+`aplicada→respuesta` solo con aplicaciones de ≥ 7 días) y **top 3 movimientos**, cada uno con
+los números que lo sostienen (riesgos operativos primero, luego embudo).
+
+**Salida** `logs/monitor-YYYY-MM-DD.json`: `date`, `fuentes`, `totals`, `stages` (scraper, ranker,
+cvs, apply, embudo: `status` + `metrics` + `checks`), `funnel` (conteos, conversiones, umbrales con
+progreso, días desde la última respuesta/entrevista), `optimizer`, `alerts` (solo las disparadas,
+críticas primero, con `probable_cause` y `suggested_action`). Exit code 0 aunque falten fuentes;
+2 solo si no puede leer ni la DB ni la cola. Umbrales operativos: `monitor.py › UMBRALES`.
+
 ## Notas y límites conocidos
 
 - JobSpy usa los endpoints públicos de cada sitio, sin login. Estado observado:

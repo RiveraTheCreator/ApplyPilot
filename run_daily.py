@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Corrida diaria del pipeline (Fase 1): scraper -> filtro/ranking -> log.
+"""Corrida diaria del pipeline: scraper -> filtro/ranking -> monitor -> log.
 
 Por defecto ejecuta los perfiles de ``search-profiles.json`` (cada uno con su
 ``results_wanted``), una búsqueda a la vez. Si ese archivo falta o no tiene
@@ -164,10 +164,23 @@ def main(argv: list[str] | None = None) -> int:
         plan, stats["inserted"], result["evaluated"], result["passed"], len(stats["failures"]),
         ", ".join(f"{s}:{v['failed']}" for s, v in stats["per_site"].items()), log_path,
     )
+    run_monitor(args.db)
     if stats["total_failure"]:
         log.error("FALLO TOTAL: ninguna búsqueda respondió en ninguna fuente.")
         return 1
     return 0
+
+
+def run_monitor(db_path: str) -> None:
+    """Monitor del pipeline completo (solo lectura). Nunca cambia el exit code de la corrida."""
+    try:
+        import monitor
+        snap = monitor.run(db_path=db_path)
+        for line in monitor.format_summary(snap).splitlines():
+            log.info("MONITOR %s", line)
+        log.info("MONITOR JSON: %s", snap.get("_path"))
+    except Exception:  # noqa: BLE001 - el monitor nunca tumba la corrida diaria
+        log.exception("FALLO en el monitor; la corrida sigue (no afecta el exit code)")
 
 
 if __name__ == "__main__":
