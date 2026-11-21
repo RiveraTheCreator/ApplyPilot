@@ -779,11 +779,17 @@ def build_funnel(ctx: Ctx, db: dict | None, queue: dict | None, crm: dict | None
                                      "keywords muertas, sumar nuevas",
                            "regla": "aplicaciones enviadas sin entrevista; un rechazo cuenta como sin entrevista"},
     }
+    # Contexto de madurez (no cambia el estado del umbral, acordado con Alex): cuántas de esas
+    # aplicaciones llevan ≥ N días; 0 respuestas sobre aplicaciones de 1–3 días no es señal todavía.
+    n_mature = len(mature)
+    thresholds["sin_respuesta"]["maduras"] = n_mature - sum(a["has_response"] for a in mature)
+    thresholds["sin_entrevista"]["maduras"] = n_mature - sum(a["has_interview"] for a in mature)
     for name, t in thresholds.items():
         st = CRITICO if t["valor"] >= t["umbral"] else ATENCION if t["valor"] >= t["aviso"] else OK
         t["estado"] = st
         msg = (f"Umbral {name.replace('_', ' ')}: {t['progreso']}"
                + (" — CUMPLIDO" if st == CRITICO else " — aviso" if st == ATENCION else "")
+               + f" [{t['maduras']} de {t['valor']} con ≥ {UMBRALES['aplicacion_madura_dias']} días de enviadas]"
                + ("" if confianza == "alta" else " (sin export del CRM: puede incluir aplicaciones que sí tuvieron respuesta)"))
         check(checks, ctx, f"umbral_{name}", st, msg, fuente, {"valor": t["valor"], "aviso": t["aviso"],
                                                              "umbral": t["umbral"]},

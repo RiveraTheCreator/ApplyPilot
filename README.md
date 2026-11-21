@@ -605,3 +605,37 @@ críticas primero, con `probable_cause` y `suggested_action`). Exit code 0 aunqu
 - El match de keywords es por frase exacta, sin distinguir mayúsculas ni acentos y
   en límite de palabra (para que "AWS" no matchee "laws").
 - "Easy Apply" solo se detecta si aparece en el texto de la vacante.
+
+## Cartas de presentación y resumen (`covergen.py`, 2026-11-19)
+
+Hermano de `cvgen.py`: genera una **carta de presentación** (250–400 palabras) y un **resumen profesional**
+(60–90 palabras, para formularios con campo "Summary") a medida por vacante, en el idioma de la vacante.
+
+- **Hechos solo de `profile.json`.** El módulo selecciona y reordena viñetas cuantificadas por match con la vacante;
+  los marcos de unión (`FRAMES`) no llevan hechos ni números. Para pasar de la voz de CV a primera persona solo
+  cambia la forma del verbo con tablas explícitas (`VERBS_1P`, `COORD_1P`); los tests lo verifican token por token.
+  Si una viñeta empieza con un verbo que no está en la tabla, no entra a la carta (agregarlo a la tabla, no al perfil).
+- **Lo que Alex no tiene se omite sin nombrarlo** y se compensa con la habilidad transferible de `not_possessed`.
+  Años de experiencia nunca se afirman.
+- **Estructura:** gancho (rol + encaje, intro de la familia de rol) / evidencia (2–3 logros cuantificados en viñetas)
+  / habilidades reales que hacen match + compensación / cierre (ubicación, contacto). Optimizar para ATS/IA significa
+  aquí espejo honesto de keywords y formato limpio, **nunca** texto oculto ni instrucciones para IAs.
+- **Sin descripción ⇒ sin carta** (`pendiente_descripcion`); covergen no scrapea (usa la descripción de un duplicado si existe).
+- **Solo lectura:** `vacantes.db` con `mode=ro`; no escribe tablas, logs, perfil ni cola. Sin red.
+
+```bash
+.venv/bin/python covergen.py --vacante-id 1766 [--vacante-id ...]   # carta + resumen (--tipo ambos)
+.venv/bin/python covergen.py --vacante-id 1766 --tipo carta --palabras 400
+.venv/bin/python covergen.py --top 3 [--min-estrellas 4]             # mejores pendientes sin carta
+.venv/bin/python covergen.py --vacante-id 1325 --dry-run              # genera en /tmp e imprime el texto
+.venv/bin/python covergen.py --vacante-id 1325 --force                # sobrescribe
+.venv/bin/python covergen.py --validate ~/workspace/cv/cover-x.txt    # .txt o .docx; ubica la vacante por nombre
+.venv/bin/python -m unittest test_covergen -v
+```
+
+Salidas en `~/workspace/cv/`: `cover-<empresa>-<titulo>.txt` + `.docx` y `summary-<empresa>-<titulo>.txt`
+(nunca se sobrescriben sin `--force`). `validate_text` revisa: afirmaciones de `forbidden_claims` (el título y la
+empresa de la vacante se excluyen: nombrar el rol no es afirmar), emojis, texto oculto (caracteres de ancho cero/
+bidi/tag, CSS/HTML; en .docx runs blancos, <8 pt, `w:vanish`, tablas), instrucciones para IAs/ATS, números que no
+estén en `profile.json` o en la vacante, años afirmados, marcadores pendientes, rango de palabras e idioma.
+Durante la generación, si algo falla se **borran** los archivos (como `cvgen.validate_docx`); `--validate` solo reporta.

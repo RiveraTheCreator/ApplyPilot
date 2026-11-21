@@ -17,6 +17,9 @@ Pesos, umbrales, on/off de keywords y países viven en ``filter-config.json``
 
 NO existe filtro por años de experiencia ni por título "senior": los años
 pedidos son la señal más débil del score (0 a 5 puntos, nunca penaliza).
+Desde la config 2.1.0 (reapunte 2026-11-20) un TÍTULO senior topa en 3★ y una
+región de contratación EU/Asia (título + ubicación) topa en 2★, con −10 de score
+cada uno; son caps, no descartes. Sin esas claves en la config (2.0.0) no aplican.
 
 Uso:
     python3 filter_rank.py                 # evalúa filas con estado='nueva'
@@ -278,9 +281,45 @@ def fit_level(kw_points: float, stars_cfg: dict) -> str:
     return "none"
 
 
+def build_seniority_regex(fcfg: dict) -> re.Pattern | None:
+    """Regex de título senior (``seniority.title_re``) o None si la config no lo trae (≤ 2.0.0)."""
+    pattern = (fcfg.get("seniority") or {}).get("title_re")
+    return re.compile(pattern, re.I) if pattern else None
+
+
+def build_region_matcher(fcfg: dict) -> tuple[re.Pattern | None, tuple[str, ...]]:
+    """(regex título+ubicación, países/ciudades en ubicación) de ``region.*``; vacíos si faltan."""
+    region = fcfg.get("region") or {}
+    pattern = region.get("excluded_title_location_re")
+    countries = tuple(normalize(c) for c in region.get("excluded_location_countries", []) if c)
+    return (re.compile(pattern, re.I) if pattern else None), countries
+
+
+def is_senior_title(title_norm: str, senior_re: re.Pattern | None) -> bool:
+    """True si el TÍTULO (normalizado) es senior/chief/lead/staff/principal… La descripción no entra."""
+    return bool(senior_re and senior_re.search(title_norm))
+
+
+def is_region_excluded(title_norm: str, loc_norm: str, region_re: re.Pattern | None,
+                       countries: tuple[str, ...]) -> bool:
+    """True si título + ubicación indican contratación restringida a Europa/Asia.
+
+    La descripción NO entra (listas de países globales y boilerplate APAC/EMEA dan
+    falsos positivos). Región desconocida = neutra (False).
+    """
+    if region_re and region_re.search(f"{title_norm} {loc_norm}"):
+        return True
+    return any(c in loc_norm for c in countries)
+
+
 def compute_stars(modality: str, fit: str, sal: str, fast_or_recent: bool,
-                  friction: bool, stars_cfg: dict) -> int:
-    """Estrellas 1-5 según ranking-rules.md v2 (umbrales en filter-config.json)."""
+                  friction: bool, stars_cfg: dict, senior: bool = False,
+                  region_excluded: bool = False) -> int:
+    """Estrellas 1-5 según ranking-rules.md v2 (umbrales en filter-config.json).
+
+    Los caps de título senior y de región excluida (config ≥ 2.1.0) van DESPUÉS de
+    todas las demás reglas. Si la config no trae el cap, no se aplica (compatibilidad 2.0.0).
+    """
     tier = modality if modality in stars_cfg["base"] else "no_especificada"
     stars = stars_cfg["base"][tier][fit]
     remote = modality == "remoto"
@@ -295,6 +334,10 @@ def compute_stars(modality: str, fit: str, sal: str, fast_or_recent: bool,
         stars = min(stars, stars_cfg["salary_clearly_below_cap"]) - penalty
     if friction:
         stars = min(stars, stars_cfg["friction_cap_remote"]) if remote else stars - penalty
+    if senior and stars_cfg.get("seniority_title_cap") is not None:
+        stars = min(stars, stars_cfg["seniority_title_cap"])
+    if region_excluded and stars_cfg.get("region_excluded_cap") is not None:
+        stars = min(stars, stars_cfg["region_excluded_cap"])
     return max(1, min(5, int(stars)))
 
 
@@ -378,7 +421,24 @@ def score_row(row, config: dict, fcfg: dict, fast_re: re.Pattern, today: date) -
     else:
         parts["experiencia"] = w["exp_high"]
 
-    score = float(min(100, sum(parts.values())))
+    # 8) Reapunte (config ≥ 2.1.0): título senior y región excluida. Solo título
+    #    (senior) y título + ubicación (región); la descripción NO entra. Sin las
+    #    secciones ``seniority`` / ``region`` en la config no hay partes, ni caps, ni flags.
+    #    Se calcula antes del score porque las penalizaciones forman parte de la suma.
+    senior_re = build_seniority_regex(fcfg)
+    region_re, region_countries = build_region_matcher(fcfg)
+    senior_title = is_senior_title(title_norm, senior_re)
+    region_excluded = is_region_excluded(title_norm, loc_norm, region_re, region_countries)
+    if senior_re is not None:
+        penalty = w.get("seniority_title_penalty", fcfg["seniority"].get("score_penalty", 0))
+        parts["seniority"] = -penalty if senior_title else 0
+    if region_re is not None or region_countries:
+        penalty = w.get("region_excluded_penalty", fcfg["region"].get("score_penalty", 0))
+        parts["region"] = -penalty if region_excluded else 0
+
+    # Acotado a [0, 100]: con 2.0.0 todas las partes son >= 0 y el piso es un no-op;
+    # con las penalizaciones del reapunte mantiene el contrato "score 0-100".
+    score = float(max(0, min(100, sum(parts.values()))))
 
     # Modalidad y único descarte.
     modality, signals = classify_modality(f"{title_norm}\n{loc_norm}\n{desc_norm}", row["modalidad"])
@@ -389,9 +449,14 @@ def score_row(row, config: dict, fcfg: dict, fast_re: re.Pattern, today: date) -
     friction = bool(_VISA_RELOCATION_RE.search(text_norm))
     fit = fit_level(parts["keywords"], fcfg["stars"])
     stars = None if reasons else compute_stars(
-        modality, fit, sal, fast or recent, friction, fcfg["stars"])
+        modality, fit, sal, fast or recent, friction, fcfg["stars"],
+        senior=senior_title, region_excluded=region_excluded)
 
     flags = []
+    if senior_title:
+        flags.append("senior_title")
+    if region_excluded:
+        flags.append("region_excluded")
     if sal == "unknown":
         flags.append("salary_unknown")
     if friction:
@@ -484,11 +549,33 @@ def evaluate(db_path: str = db.DEFAULT_DB, keywords_file: str = "keywords.json",
     return result
 
 
+def _group_key(item: dict) -> tuple[str, str]:
+    """Empresa + título normalizados (solo alfanumérico), para agrupar la misma vacante
+    publicada varias veces (p. ej. LinkedIn la publica una vez por país con otro id)."""
+    norm = lambda s: " ".join(re.findall(r"[a-z0-9]+", normalize(s)))  # noqa: E731
+    return norm(item.get("empresa")), norm(item.get("titulo"))
+
+
+def group_ranked(ranked: list[dict]) -> list[list[dict]]:
+    """Agrupa el ranking por empresa+título conservando el orden (el primero es el mejor).
+    Solo presentación: no cambia score, estrellas ni filas de la base."""
+    groups: dict[tuple, list] = {}
+    for item in ranked:
+        groups.setdefault(_group_key(item), []).append(item)
+    return list(groups.values())
+
+
 def format_report(result: dict, top: int | None = None) -> str:
-    """Lista rankeada (estrellas, score) + conteos por estrella y motivos de descarte."""
-    ranked = result["ranked"] if top is None else result["ranked"][:top]
+    """Lista rankeada (estrellas, score) + conteos por estrella y motivos de descarte.
+
+    El listado agrupa por empresa+título: cada vacante aparece una vez y las demás
+    publicaciones del mismo rol se indican con ``(+N publicaciones más: ids)``.
+    """
+    groups = group_ranked(result["ranked"])
+    shown = groups if top is None else groups[:top]
     lines = ["Ranking v2 (estrellas desc, score desc) — único descarte: 100% presencial:"]
-    for rank, item in enumerate(ranked, start=1):
+    for rank, group in enumerate(shown, start=1):
+        item = group[0]
         sueldo = item["sueldo"] or "[confirmar]"
         lines.append(
             f"{rank:>3}. {'★' * item['stars']:<5} [{item['score']:5.1f}] {item['titulo']} | "
@@ -496,15 +583,24 @@ def format_report(result: dict, top: int | None = None) -> str:
             f"aristas {item['aristas']} | sueldo: {sueldo}"
         )
         lines.append(f"       {item['url']}")
-    if not ranked:
+        if len(group) > 1:
+            ids = ", ".join(str(g["id"]) for g in group[1:8]) + (" …" if len(group) > 8 else "")
+            lines.append(f"       (+{len(group) - 1} publicaciones más del mismo rol: ids {ids})")
+    if not shown:
         lines.append("  (ninguna vacante pasó el filtro)")
-    elif top is not None and len(result["ranked"]) > top:
-        lines.append(f"  ... y {len(result['ranked']) - top} más (usa --top 0 para ver todas)")
+    elif top is not None and len(groups) > top:
+        lines.append(f"  ... y {len(groups) - top} vacantes distintas más (usa --top 0 para ver todas)")
     lines.append("")
     lines.append(
         f"Evaluadas: {result['evaluated']} | Pasan: {result['passed']} | "
         f"Descartadas: {result['dropped']}"
     )
+    dup_groups = [g for g in groups if len(g) > 1]
+    if dup_groups:
+        lines.append(
+            f"Vacantes distintas (empresa+título) que pasan: {len(groups)} | "
+            f"publicaciones repetidas: {sum(len(g) - 1 for g in dup_groups)} en {len(dup_groups)} grupos"
+        )
     stars = result.get("stars") or {}
     lines.append("Por estrellas: " + " | ".join(f"{s}★ {stars.get(s, 0)}" for s in (5, 4, 3, 2, 1)))
     if result["drop_reasons"]:

@@ -1,16 +1,14 @@
 {
-  "version": "2.0.0",
-  "updated": "2026-11-16",
-  "updated_by": "claude-code (build Ranker v2)",
-  "authority": "ranking-rules.md v2 (Alex, 2026-11-15 21:29). Cualquier cambio aquí se anota en filter-changelog.md y se reporta en el review diario.",
-
+  "version": "2.1.0",
+  "updated": "2026-11-20T22:30:00-06:00",
+  "updated_by": "coordinador 2026-11-20 22:30 CST (propuesta subagente reapunte 2026-11-20; cableado en filter_rank.py por sesión Opus auditoría 2026-11-20; aplicada por coordinador)",
+  "authority": "ranking-rules.md v2 (Alex, 2026-11-15 21:29) + reapunte 2026-11-20 (coordinador; docs/reapunte-2026-11-20.md). Cualquier cambio aquí se anota en filter-changelog.md y se reporta en el review diario.",
   "hard_filter": {
     "_doc": "Único descarte: 100% presencial sin componente remoto ni híbrido. No cambiar a true otros descartes sin orden explícita de Alex.",
     "discard_onsite_only": true
   },
-
   "weights": {
-    "_doc": "Puntos del score 0-100 (misma base que v1; sueldo baja de 15 a 8). Máximo teórico 88, tope 100.",
+    "_doc": "Puntos del score 0-100 (misma base que v1; sueldo baja de 15 a 8). Máximo teórico 88, tope 100. seniority_title_penalty / region_excluded_penalty se RESTAN del score cuando dispara su flag (el score solo ordena dentro del mismo nivel de estrellas; el efecto real es el cap de estrellas). Los pesos de experiencia (exp_*) NO cambian: los años pedidos siguen siendo la señal más débil y nunca filtran (regla de Alex).",
     "keywords_max": 40,
     "keyword_title": 10,
     "keyword_desc": 5,
@@ -29,62 +27,303 @@
     "exp_low": 5,
     "exp_none": 3,
     "exp_mid": 1,
-    "exp_high": 0
+    "exp_high": 0,
+    "seniority_title_penalty": 10,
+    "region_excluded_penalty": 10
   },
-
   "salary": {
     "_doc": "Ratios contra el mínimo objetivo (keywords.json filters.pay_target_mxn[0] = 35,000 MXN/mes). Desconocido = neutro, nunca inventado.",
     "slightly_below_ratio": 0.85,
     "low_ratio": 0.6
   },
-
   "stars": {
-    "_doc": "Umbrales de estrellas (ranking-rules.md v2). fit = puntos de keywords (0-40).",
+    "_doc": "Umbrales de estrellas (ranking-rules.md v2). fit = puntos de keywords (0-40). seniority_title_cap / region_excluded_cap: topes que se aplican en compute_stars() DESPUÉS de todas las demás reglas (ver seniority.* y region.*). Ningún cap descarta: 3★ y 2★ quedan en exploración, fuera del flujo de CV/apply de 4★+.",
     "fit_strong_min": 20,
     "fit_good_min": 10,
     "fit_weak_min": 5,
     "base": {
-      "remoto": {"strong": 4, "good": 4, "weak": 3, "none": 2},
-      "hibrido": {"strong": 3, "good": 3, "weak": 2, "none": 1},
-      "no_especificada": {"strong": 3, "good": 3, "weak": 2, "none": 1}
+      "remoto": {
+        "strong": 4,
+        "good": 4,
+        "weak": 3,
+        "none": 2
+      },
+      "hibrido": {
+        "strong": 3,
+        "good": 3,
+        "weak": 2,
+        "none": 1
+      },
+      "no_especificada": {
+        "strong": 3,
+        "good": 3,
+        "weak": 2,
+        "none": 1
+      }
     },
     "five_star_requires": "remoto + fit strong + (sueldo >= objetivo o proceso rápido o publicación reciente)",
     "salary_slightly_below_cap": 4,
     "salary_low_cap": 3,
     "salary_clearly_below_cap": 2,
     "friction_cap_remote": 2,
-    "non_remote_penalty": 1
+    "non_remote_penalty": 1,
+    "seniority_title_cap": 3,
+    "region_excluded_cap": 2
   },
-
+  "seniority": {
+    "_doc": "Penalización por TÍTULO senior (título, no descripción: en la descripción 'senior' aparece como 'senior stakeholders' y daría falsos positivos). NO es filtro duro y NO toca los pesos de años de experiencia: un Senior con buen encaje puede seguir en 3★ y Alex puede aplicar por habilidades transferibles. 'Manager' a secas NO penaliza: arista 11 (Account Manager SMB/Mid-Market, Technical Account Manager, Customer Success Manager) son roles objetivo. 'Lead Generation' tampoco penaliza (no es seniority). Justificación: 0 entrevistas en 31 enviadas; rechazos en roles senior (Viva Sr RevOps, EPAM Chief); 50 de 205 4★+ en 'nueva' son senior y consumen cupo diario.",
+    "title_re": "\\b(senior|chief|principal|staff|director|head of|vp|vice president)\\b|\\bsr\\.|\\blead\\b(?!\\s+generation)",
+    "title_cap": 3,
+    "score_penalty": 10
+  },
+  "region": {
+    "_doc": "Filtro de residencia: objetivo US, Canadá y toda LATAM (contratación desde México). Roles con contratación EXPLÍCITAMENTE restringida a Europa/EMEA o Asia/APAC bajan a 2★ como máximo (cap, no descarte: el único descarte sigue siendo 100% presencial). Detección SOLO en título + ubicación: las listas de países en la descripción son boilerplate de contratación global ('contratamos en Alemania, Polonia, México...') y darían falsos positivos (verificado: Fin/Knowt listan decenas de países sin ser roles EU). Región desconocida ('Remote' genérico, sin país) = NEUTRA, sin penalización: la mayoría del pool remoto no declara región y penalizarlo vaciaría el embudo. Justificación: Pearson (Polonia) aplicada como 4★; Smart Working (India, horario 00:30-10:00 CDMX) llegó a 5★ y Alex ya la descartó; n8n EMEA ×4 y Doss PH en 4★+.",
+    "target": [
+      "US",
+      "CA",
+      "MX",
+      "LATAM"
+    ],
+    "excluded_title_location_re": "\\bemea\\b|remote[\\s\\-]*europe|\\(europe|europe\\)|german speaking|remote[\\s\\-]*emea|asia only|\\(philippines\\)|^ph\\b|\\(india|mumbai|pune|manila|\\(apac",
+    "excluded_location_countries": [
+      "poland",
+      "germany",
+      "france",
+      "spain",
+      "portugal",
+      "netherlands",
+      "italy",
+      "ireland",
+      "belgium",
+      "austria",
+      "sweden",
+      "denmark",
+      "norway",
+      "finland",
+      "switzerland",
+      "united kingdom",
+      "england",
+      "berlin",
+      "paris",
+      "madrid",
+      "amsterdam",
+      "dublin",
+      "warsaw",
+      "czech",
+      "greece",
+      "polonia",
+      "alemania",
+      "india",
+      "philippines",
+      "filipinas",
+      "pakistan",
+      "vietnam",
+      "indonesia",
+      "thailand",
+      "malaysia",
+      "singapore",
+      "japan",
+      "korea",
+      "china",
+      "taiwan"
+    ],
+    "_note_london": "'london' NO está en la lista: London, Ontario (Canadá) es falso positivo (v2096 Trojan Technologies).",
+    "unknown_neutral": true,
+    "excluded_cap": 2,
+    "score_penalty": 10
+  },
   "keywords": {
     "_doc": "on/off de keywords para el score. Listar aquí la keyword exacta de keywords.json para apagarla (no se borra de keywords.json).",
     "disabled": []
   },
-
   "countries": [
-    {"code": "MX", "name": "Mexico", "aliases": ["mexico", "mx", "ciudad de mexico", "cdmx", "mexico city", "monterrey", "guadalajara", "desde casa, mexico"], "indeed": "Mexico", "glassdoor_location": "Mexico City, Mexico", "linkedin_location": "Mexico"},
-    {"code": "CO", "name": "Colombia", "aliases": ["colombia", "bogota", "medellin"], "indeed": "Colombia", "linkedin_location": "Colombia"},
-    {"code": "AR", "name": "Argentina", "aliases": ["argentina", "buenos aires"], "indeed": "Argentina", "glassdoor_location": "Buenos Aires, Argentina", "linkedin_location": "Argentina"},
-    {"code": "BR", "name": "Brazil", "aliases": ["brazil", "brasil", "sao paulo"], "indeed": "Brazil", "glassdoor_location": "Sao Paulo, Brazil", "linkedin_location": "Brazil"},
-    {"code": "CL", "name": "Chile", "aliases": ["chile", "santiago"], "indeed": "Chile", "linkedin_location": "Chile"},
-    {"code": "PE", "name": "Peru", "aliases": ["peru", "lima"], "indeed": "Peru", "linkedin_location": "Peru"},
-    {"code": "EC", "name": "Ecuador", "aliases": ["ecuador", "quito", "guayaquil"], "indeed": "Ecuador", "linkedin_location": "Ecuador"},
-    {"code": "UY", "name": "Uruguay", "aliases": ["uruguay", "montevideo"], "indeed": "Uruguay", "linkedin_location": "Uruguay"},
-    {"code": "PY", "name": "Paraguay", "aliases": ["paraguay", "asuncion"], "linkedin_location": "Paraguay"},
-    {"code": "BO", "name": "Bolivia", "aliases": ["bolivia", "la paz", "santa cruz de la sierra"], "linkedin_location": "Bolivia"},
-    {"code": "GT", "name": "Guatemala", "aliases": ["guatemala"], "linkedin_location": "Guatemala"},
-    {"code": "CR", "name": "Costa Rica", "aliases": ["costa rica", "san jose, costa rica"], "indeed": "Costa Rica", "linkedin_location": "Costa Rica"},
-    {"code": "PA", "name": "Panama", "aliases": ["panama"], "indeed": "Panama", "linkedin_location": "Panama"},
-    {"code": "DO", "name": "Dominican Republic", "aliases": ["dominican republic", "republica dominicana", "santo domingo"], "linkedin_location": "Dominican Republic"},
-    {"code": "US", "name": "United States", "aliases": ["united states", "usa", "u.s.", "us"], "indeed": "USA", "glassdoor_location": "New York, NY", "zip_location": "New York, NY", "linkedin_location": "United States"},
-    {"code": "CA", "name": "Canada", "aliases": ["canada", "toronto", "vancouver", "montreal"], "indeed": "Canada", "glassdoor_location": "Toronto, ON", "zip_location": "Toronto, ON", "linkedin_location": "Canada"}
+    {
+      "code": "MX",
+      "name": "Mexico",
+      "aliases": [
+        "mexico",
+        "mx",
+        "ciudad de mexico",
+        "cdmx",
+        "mexico city",
+        "monterrey",
+        "guadalajara",
+        "desde casa, mexico"
+      ],
+      "indeed": "Mexico",
+      "glassdoor_location": "Mexico City, Mexico",
+      "linkedin_location": "Mexico"
+    },
+    {
+      "code": "CO",
+      "name": "Colombia",
+      "aliases": [
+        "colombia",
+        "bogota",
+        "medellin"
+      ],
+      "indeed": "Colombia",
+      "linkedin_location": "Colombia"
+    },
+    {
+      "code": "AR",
+      "name": "Argentina",
+      "aliases": [
+        "argentina",
+        "buenos aires"
+      ],
+      "indeed": "Argentina",
+      "glassdoor_location": "Buenos Aires, Argentina",
+      "linkedin_location": "Argentina"
+    },
+    {
+      "code": "BR",
+      "name": "Brazil",
+      "aliases": [
+        "brazil",
+        "brasil",
+        "sao paulo"
+      ],
+      "indeed": "Brazil",
+      "glassdoor_location": "Sao Paulo, Brazil",
+      "linkedin_location": "Brazil"
+    },
+    {
+      "code": "CL",
+      "name": "Chile",
+      "aliases": [
+        "chile",
+        "santiago"
+      ],
+      "indeed": "Chile",
+      "linkedin_location": "Chile"
+    },
+    {
+      "code": "PE",
+      "name": "Peru",
+      "aliases": [
+        "peru",
+        "lima"
+      ],
+      "indeed": "Peru",
+      "linkedin_location": "Peru"
+    },
+    {
+      "code": "EC",
+      "name": "Ecuador",
+      "aliases": [
+        "ecuador",
+        "quito",
+        "guayaquil"
+      ],
+      "indeed": "Ecuador",
+      "linkedin_location": "Ecuador"
+    },
+    {
+      "code": "UY",
+      "name": "Uruguay",
+      "aliases": [
+        "uruguay",
+        "montevideo"
+      ],
+      "indeed": "Uruguay",
+      "linkedin_location": "Uruguay"
+    },
+    {
+      "code": "PY",
+      "name": "Paraguay",
+      "aliases": [
+        "paraguay",
+        "asuncion"
+      ],
+      "linkedin_location": "Paraguay"
+    },
+    {
+      "code": "BO",
+      "name": "Bolivia",
+      "aliases": [
+        "bolivia",
+        "la paz",
+        "santa cruz de la sierra"
+      ],
+      "linkedin_location": "Bolivia"
+    },
+    {
+      "code": "GT",
+      "name": "Guatemala",
+      "aliases": [
+        "guatemala"
+      ],
+      "linkedin_location": "Guatemala"
+    },
+    {
+      "code": "CR",
+      "name": "Costa Rica",
+      "aliases": [
+        "costa rica",
+        "san jose, costa rica"
+      ],
+      "indeed": "Costa Rica",
+      "linkedin_location": "Costa Rica"
+    },
+    {
+      "code": "PA",
+      "name": "Panama",
+      "aliases": [
+        "panama"
+      ],
+      "indeed": "Panama",
+      "linkedin_location": "Panama"
+    },
+    {
+      "code": "DO",
+      "name": "Dominican Republic",
+      "aliases": [
+        "dominican republic",
+        "republica dominicana",
+        "santo domingo"
+      ],
+      "linkedin_location": "Dominican Republic"
+    },
+    {
+      "code": "US",
+      "name": "United States",
+      "aliases": [
+        "united states",
+        "usa",
+        "u.s.",
+        "us"
+      ],
+      "indeed": "USA",
+      "glassdoor_location": "New York, NY",
+      "zip_location": "New York, NY",
+      "linkedin_location": "United States"
+    },
+    {
+      "code": "CA",
+      "name": "Canada",
+      "aliases": [
+        "canada",
+        "toronto",
+        "vancouver",
+        "montreal"
+      ],
+      "indeed": "Canada",
+      "glassdoor_location": "Toronto, ON",
+      "zip_location": "Toronto, ON",
+      "linkedin_location": "Canada"
+    }
   ],
-
   "health": {
     "_doc": "Umbrales de las alertas de logs/filter-health-YYYY-MM-DD.json.",
     "pass_rate_min": 0.6,
     "pass_rate_max": 0.97,
-    "expected_sources": ["linkedin", "indeed", "glassdoor", "zip_recruiter"],
+    "expected_sources": [
+      "linkedin",
+      "indeed",
+      "glassdoor",
+      "zip_recruiter"
+    ],
     "source_min_rows_for_pass_alert": 5,
     "keyword_zero_days": 3,
     "drop_reason_spike_factor": 2.0,

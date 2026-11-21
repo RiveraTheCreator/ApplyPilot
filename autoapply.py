@@ -25,6 +25,7 @@ Uso:
   .venv/bin/python autoapply.py --run-queue [--limit N] [--vacante-id N]   # entrega tareas al operador
   .venv/bin/python autoapply.py --report resultado.json   # (o '-' para stdin) registra el resultado
   .venv/bin/python autoapply.py --status                  # resumen de la cola y del cupo diario
+  .venv/bin/python autoapply.py --reanudar v123 --nota "Alex (2026-11-20 21:40): No"   # PREGUNTA → en_curso
 """
 from __future__ import annotations
 
@@ -315,12 +316,37 @@ def build(conn, profile: dict, config: dict, queue: dict, *, limit: int, only_id
                 row = conn.execute("SELECT id, estado, pasa_filtro FROM vacantes WHERE id=?", (vid,)).fetchone()
                 motivo = "no existe" if row is None else f"estado={row['estado']} pasa_filtro={row['pasa_filtro']}"
                 result["omitidas"].append({"vacante_id": vid, "motivo": f"no elegible ({motivo})"})
+    # Dedupe por (empresa, título) además de por id: una vacante ya aplicada puede reaparecer con
+    # otra URL (re-publicación o el mismo aviso en otra búsqueda). Sus filas nuevas quedan en
+    # 'nueva', forman un grupo sin ids en la cola y antes se volvían a encolar (doble aplicación).
+    sent_keys: dict[tuple, int] = {}
+    for r in conn.execute("SELECT id, empresa, titulo, estado FROM vacantes WHERE estado IS NOT NULL "
+                          "AND estado != 'nueva' ORDER BY id"):
+        if (r["estado"] or "").lower() in cvgen.SENT_STATES:
+            sent_keys.setdefault(cvgen.dedup_key(r), r["id"])
+    queue_by_key: dict[tuple, dict] = {}
+    for e in queue["entries"].values():
+        if e.get("empresa") is not None and e.get("titulo") is not None:
+            k = cvgen.dedup_key({"empresa": e["empresa"], "titulo": e["titulo"]})
+            prev = queue_by_key.get(k)
+            # Prioridad: un estado pegajoso (aplicada, pregunta...) gana a uno reintentable.
+            if prev is None or (prev.get("estado") not in STICKY and e.get("estado") in STICKY):
+                queue_by_key[k] = e
     window = 0
     for group in groups:
         if not only_ids and window >= limit:
             break
         ids = [r["id"] for r in group]
+        key = cvgen.dedup_key(group[0])
+        if key in sent_keys:
+            result["omitidas"].append({"vacante_id": group[0]["id"], "titulo": group[0]["titulo"],
+                                       "empresa": group[0]["empresa"], "duplicados": ids[1:],
+                                       "motivo": f"misma empresa+título que la vacante {sent_keys[key]}, "
+                                                 "ya enviada (no se aplica dos veces)"})
+            continue
         existing = next((queue["entries"][qid(i)] for i in ids if qid(i) in queue["entries"]), None)
+        if existing is None:
+            existing = queue_by_key.get(key)
         if existing:
             st = existing["estado"]
             if st in STICKY or (st in RETRYABLE and not reintentar):
@@ -566,6 +592,63 @@ def run_queue(config: dict, args) -> int:
     return 0
 
 
+def resume(config: dict, queue_ids: list[str], nota: str) -> int:
+    """Reanuda vacantes en 'pendiente-respuesta-Alex' cuya pregunta ya respondió Alex.
+
+    Formaliza lo que antes se hacía editando apply-queue.json a mano (PREGUNTA → en_curso):
+    deja historial con zona horaria, suma el intento, escribe el log diario y entrega la
+    tarea al operador igual que --run-queue, con la respuesta de Alex en ``respuesta_alex``.
+    No envía nada ni toca apply-config.json (respuestas_conocidas solo se amplía a mano con
+    fuente y confirmación). Consume cupo diario como cualquier reanudación.
+    """
+    nota = (nota or "").strip()
+    if not nota:
+        print("ERROR --reanudar exige --nota con la respuesta de Alex y su fuente (quién/cuándo)",
+              file=sys.stderr)
+        return 2
+    lim = config["limites"]
+    tasks, errors = [], []
+    with queue_lock(QUEUE_PATH):
+        queue = load_queue(QUEUE_PATH)
+        remaining = lim["diario"] - applied_today(queue, today())
+        for raw in queue_ids:
+            key = raw if str(raw).startswith("v") else qid(int(raw))
+            e = queue["entries"].get(key)
+            if e is None:
+                errors.append(f"{key} no está en la cola")
+                continue
+            if e["estado"] != PREGUNTA:
+                errors.append(f"{key} está en '{e['estado']}', no en '{PREGUNTA}': no se reanuda")
+                continue
+            if remaining <= 0:
+                errors.append(f"{key}: cupo diario agotado ({lim['diario']}); súbelo en apply-config.json "
+                              "› limites.diario si hace falta")
+                continue
+            remaining -= 1
+            e["estado"] = EN_CURSO
+            e["intentos"] = e.get("intentos", 0) + 1
+            e["actualizado"] = iso_now()
+            e["historial"].append({"t": iso_now(), "estado": EN_CURSO,
+                                   "nota": f"reanudada (respuesta de Alex): {nota}"})
+            log_line(f"REANUDADA {e['id']} {e['empresa']} — {e['titulo']} ({e['paquete']['plataforma']}) "
+                     f"intento {e['intentos']} | pregunta=\"{e.get('pregunta_alex') or ''}\" | respuesta=\"{nota}\"")
+            tasks.append({"queue_id": e["id"], "orden": len(tasks) + 1, "delay_before_s": 0,
+                          "pregunta_alex": e.get("pregunta_alex"), "respuesta_alex": nota,
+                          "paquete": e["paquete"], "instrucciones_navegador": browser_instructions(e)
+                          + f"\n9) Respuesta de Alex para la pregunta pendiente (usar SOLO en esa pregunta): {nota}",
+                          "reporte_plantilla": report_template(e)})
+        if tasks:
+            save_queue(QUEUE_PATH, queue)
+    out = {"generado": iso_now(), "reanudadas": len(tasks), "errores": errors, "tareas": tasks}
+    if tasks:
+        path = LOG_DIR / f"apply-tasks-{now_local().strftime('%Y%m%d-%H%M%S')}-reanudar.json"
+        _atomic_write(path, out)
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    for err in errors:
+        print("ERROR " + err, file=sys.stderr)
+    return 1 if errors else 0
+
+
 # --------------------------------------------------------------------------
 # Registro de resultados
 # --------------------------------------------------------------------------
@@ -711,6 +794,9 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--run-queue", action="store_true", help="entrega al operador las siguientes tareas pendientes")
     mode.add_argument("--report", metavar="ARCHIVO", help="registra resultado(s) JSON (objeto o lista; '-' = stdin)")
     mode.add_argument("--status", action="store_true", help="resumen de la cola")
+    mode.add_argument("--reanudar", metavar="QUEUE_ID", action="append",
+                      help="reanuda una vacante en pendiente-respuesta-Alex ya respondida (repetible; exige --nota)")
+    ap.add_argument("--nota", help="con --reanudar: respuesta de Alex y su fuente (quién/cuándo)")
     ap.add_argument("--dry-run", action="store_true", help="construye la cola y valida CVs sin escribir ni enviar")
     ap.add_argument("--limit", type=int, default=config["limites"]["por_corrida_default"],
                     help="N mejores vacantes distintas (encolar) / N tareas (run-queue). Default 5")
@@ -727,6 +813,8 @@ def main(argv: list[str] | None = None) -> int:
         return status(config)
     if args.run_queue:
         return run_queue(config, args)
+    if args.reanudar:
+        return resume(config, args.reanudar, args.nota)
     conn = db.connect(args.db)
     try:
         if args.report:

@@ -62,6 +62,10 @@ SITE_SWITCH_SLEEP_SECONDS = 5.0  # pausa extra al cambiar de sitio (mismo jitter
 MAX_RETRIES = 3  # reintentos por búsqueda, además del intento inicial
 RETRY_DELAYS = (10.0, 30.0, 90.0)  # segundos antes de cada reintento (x jitter 0.7–1.3)
 CIRCUIT_BREAKER_THRESHOLD = 5  # fallos consecutivos que dan un sitio por muerto
+# Un circuito abierto por 429 (rate limit, transitorio) se vuelve a probar con UNA búsqueda
+# tras este enfriamiento; si la prueba falla, el enfriamiento se duplica. Los 403/bloqueos
+# (deterministas) siguen muertos el resto de la corrida.
+RATE_LIMIT_COOLDOWN_SECONDS = 300.0
 PROXY_ENV_VAR = "JOBSPY_PROXIES"
 PROXY_CONFIG_FILE = Path(__file__).resolve().parent / "proxy-config.json"
 # Navegadores de escritorio; se usa uno distinto por llamada a JobSpy (round-robin).
@@ -463,35 +467,100 @@ def _redact(text: str, proxies: list[str] | None) -> str:
     return _URL_CREDENTIALS_RE.sub("<credenciales>", text)
 
 
+def classify_error(error: str | None) -> str | None:
+    """Tipo de fallo de JobSpy: 'rate_limit' (429), 'proxy' (el proxy rechazó el CONNECT),
+    'blocked' (403 del sitio) u 'other'. None si no hay error.
+
+    429 es transitorio (backoff sirve); 403 es determinista con la misma IP/proxy
+    (reintentar igual solo quema minutos).
+    """
+    if not error:
+        return None
+    text = error.lower()
+    if "429" in text:
+        return "rate_limit"
+    if "connect tunnel failed" in text or ("proxy" in text and "tunnel" in text):
+        return "proxy"
+    if "403" in text or "blocked" in text:
+        return "blocked"
+    return "other"
+
+
 class CircuitBreaker:
     """Fallos CONSECUTIVOS por sitio; al llegar al umbral el sitio queda muerto.
 
-    Cada intento fallido (reintentos incluidos) suma 1 y un éxito resetea a 0.
-    Al abrirse se registra un único log ERROR; después ``is_open`` permite
-    omitir las búsquedas restantes de ese sitio sin llamar a JobSpy.
+    Cada intento fallido (reintentos incluidos) suma 1 y un éxito (también un
+    éxito parcial: filas devueltas aunque la paginación terminara en error)
+    resetea a 0. Al abrirse se registra un único log ERROR; después ``is_open``
+    permite omitir las búsquedas restantes de ese sitio sin llamar a JobSpy.
+
+    Si la causa es un 429 (rate limit), el circuito se entreabre tras
+    ``cooldown`` segundos para UNA búsqueda de prueba: si responde, se cierra;
+    si vuelve a fallar, se reabre con el doble de enfriamiento.
     """
 
-    def __init__(self, threshold: int = CIRCUIT_BREAKER_THRESHOLD) -> None:
+    def __init__(self, threshold: int = CIRCUIT_BREAKER_THRESHOLD,
+                 cooldown: float = RATE_LIMIT_COOLDOWN_SECONDS, clock=time.monotonic) -> None:
         self.threshold = threshold
+        self.cooldown = cooldown
+        self.clock = clock
         self.failures: dict[str, int] = {}
         self.open_causes: dict[str, str] = {}
+        self.reopen_at: dict[str, float] = {}
+        self.site_cooldown: dict[str, float] = {}
+        self.probes: dict[str, int] = {}
 
     def is_open(self, site: str) -> bool:
-        return site in self.open_causes
+        """True si hay que omitir la búsqueda. Un circuito por 429 vencido deja pasar una prueba."""
+        if site not in self.open_causes:
+            return False
+        at = self.reopen_at.get(site)
+        if at is not None and self.clock() >= at:
+            del self.reopen_at[site]  # media apertura: una búsqueda de prueba
+            self.probes[site] = self.probes.get(site, 0) + 1
+            log.warning("CIRCUIT BREAKER %s: enfriamiento cumplido, búsqueda de prueba #%d",
+                        site, self.probes[site])
+            return False
+        return True
 
     def record_success(self, site: str) -> None:
         self.failures[site] = 0
+        if site in self.open_causes:
+            log.warning("CIRCUIT BREAKER cerrado para %s: la búsqueda de prueba respondió", site)
+            del self.open_causes[site]
+            self.reopen_at.pop(site, None)
+            self.site_cooldown.pop(site, None)
+
+    def _schedule_probe(self, site: str, cause: str) -> None:
+        if classify_error(cause) == "rate_limit" and self.cooldown > 0:
+            wait = self.site_cooldown.get(site, self.cooldown / 2) * 2
+            self.site_cooldown[site] = wait
+            self.reopen_at[site] = self.clock() + wait
 
     def record_failure(self, site: str, cause: str) -> bool:
         """Suma un fallo; devuelve True si el circuito está (o queda) abierto."""
         self.failures[site] = self.failures.get(site, 0) + 1
-        if not self.is_open(site) and self.failures[site] >= self.threshold:
+        if site in self.open_causes:
+            if site not in self.reopen_at:  # falló la búsqueda de prueba: reabrir
+                self.open_causes[site] = cause
+                self._schedule_probe(site, cause)
+                log.error("CIRCUIT BREAKER %s: la prueba falló (%s); reabierto%s", site, cause,
+                          f", nueva prueba en {self.site_cooldown[site]:.0f} s"
+                          if site in self.reopen_at else " por el resto de la corrida")
+            return True
+        if self.failures[site] >= self.threshold:
             self.open_causes[site] = cause
+            self._schedule_probe(site, cause)
             log.error(
-                "CIRCUIT BREAKER abierto para %s: %s; sitio muerto por el resto de la corrida",
-                site, cause,
+                "CIRCUIT BREAKER abierto para %s: %s; %s", site, cause,
+                f"se reintentará una búsqueda de prueba en {self.site_cooldown[site]:.0f} s"
+                if site in self.reopen_at else "sitio muerto por el resto de la corrida",
             )
-        return self.is_open(site)
+        return self.is_open_now(site)
+
+    def is_open_now(self, site: str) -> bool:
+        """Estado sin efectos secundarios (no consume la búsqueda de prueba)."""
+        return site in self.open_causes
 
 
 # --------------------------------------------------------------------------
@@ -702,35 +771,94 @@ def scrape_site(
     return rows, (_redact(error, proxies)[:300] if error else None)
 
 
+class ProxyRoute:
+    """Ruta de red por sitio durante una corrida: proxies configurados o conexión directa.
+
+    Si un sitio responde 403/bloqueo o el proxy rechaza el CONNECT, se prueba UNA vez
+    por corrida sin proxies; si así responde, el resto de búsquedas de ese sitio va
+    directo. Nunca guarda ni registra los valores de los proxies.
+    """
+
+    def __init__(self, proxies: list[str] | None) -> None:
+        self.proxies = list(proxies or [])
+        self.direct_sites: set[str] = set()
+        self.direct_tried: set[str] = set()
+
+    def for_site(self, site: str) -> list[str] | None:
+        if not self.proxies or site in self.direct_sites:
+            return None
+        return self.proxies
+
+    def can_try_direct(self, site: str) -> bool:
+        return bool(self.proxies) and site not in self.direct_tried and site not in self.direct_sites
+
+
 def run_search(
     job: dict,
     breaker: CircuitBreaker,
     proxies: list[str] | None = None,
     max_retries: int = MAX_RETRIES,
+    route: ProxyRoute | None = None,
 ) -> tuple[list[dict], str | None, int]:
-    """Ejecuta una búsqueda con reintentos y backoff. Devuelve (filas, error, intentos).
+    """Ejecuta una búsqueda con reintentos. Devuelve (filas, error, intentos).
 
-    1 intento inicial + hasta ``max_retries`` reintentos con esperas
-    ``RETRY_DELAYS`` (jitter x0.7–1.3). Cada intento usa el siguiente
-    user-agent y alimenta el circuit breaker; si este se abre, no se reintenta más.
+    1 intento inicial + hasta ``max_retries`` reintentos. La política depende del error
+    (``classify_error``): 429 y errores genéricos esperan ``RETRY_DELAYS`` (jitter
+    x0.7–1.3) y reintentan; 403/bloqueo y CONNECT rechazado por el proxy NO se reintentan
+    igual (es determinista): si hay proxies, se prueba una vez sin ellos (``ProxyRoute``).
+    Cada intento usa el siguiente user-agent y alimenta el circuit breaker; si este se
+    abre, no se reintenta más.
+
+    Éxito parcial: si JobSpy devuelve filas Y un error (p. ej. 429 a mitad de la
+    paginación), se aceptan las filas, cuenta como éxito para el breaker y no se
+    reintenta; el error se devuelve igual para el log. Entre intentos se conserva
+    la tanda más grande de filas (un reintento peor no borra lo ya obtenido).
     """
     site, label = job["site"], job["profile"] or job["kwargs"]["search_term"]
-    rows: list[dict] = []
+    route = route or ProxyRoute(proxies)
+    best: list[dict] = []
     error: str | None = None
     attempts = 0
-    for attempt in range(max_retries + 1):
+    retries_left = max_retries
+    while True:
         attempts += 1
-        rows, error = scrape_site(job["kwargs"], proxies=proxies, user_agent=next_user_agent())
-        if not error:
+        use = route.for_site(site)
+        rows, error = scrape_site(job["kwargs"], proxies=use, user_agent=next_user_agent())
+        if len(rows) > len(best):
+            best = rows
+        if not error or rows:
             breaker.record_success(site)
-            return rows, None, attempts
-        if breaker.record_failure(site, error) or attempt >= max_retries:
+            if error:
+                log.warning("PARCIAL %s | %r | intento %d | %d filas aceptadas pese a: %s",
+                            site, label, attempts, len(rows), error)
+            return best, error, attempts
+        kind = classify_error(error)
+        if breaker.record_failure(site, error) or retries_left <= 0:
             break
-        delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)] * random.uniform(0.7, 1.3)
+        if kind in ("blocked", "proxy"):
+            if use and route.can_try_direct(site):
+                route.direct_tried.add(site)
+                log.warning("FALLO %s | %r | intento %d | %s | reintento único sin proxies "
+                            "(%s determinista: sin backoff)", site, label, attempts, error, kind)
+                retries_left -= 1
+                rows, error2 = scrape_site(job["kwargs"], proxies=None, user_agent=next_user_agent())
+                attempts += 1
+                if len(rows) > len(best):
+                    best = rows
+                if not error2 or rows:
+                    route.direct_sites.add(site)
+                    breaker.record_success(site)
+                    log.warning("RUTA %s: responde sin proxies; el resto de la corrida va directo", site)
+                    return best, error2, attempts
+                error = error2
+                breaker.record_failure(site, error)
+            break
+        delay = RETRY_DELAYS[min(max_retries - retries_left, len(RETRY_DELAYS) - 1)] * random.uniform(0.7, 1.3)
+        retries_left -= 1
         log.warning("FALLO %s | %r | intento %d/%d | %s | reintento en %.0f s",
                     site, label, attempts, max_retries + 1, error, delay)
         time.sleep(delay)
-    return rows, error, attempts
+    return best, error, attempts
 
 
 def scrape_aristas(
@@ -838,7 +966,8 @@ def scrape_aristas(
         "plan_source": plan_source,
         "profiles": len(jobs) if plan_source == "profiles" else 0,
         "per_site": {
-            s: {"ok": 0, "failed": 0, "found": 0, "inserted": 0, "skipped": 0} for s in sites
+            s: {"ok": 0, "failed": 0, "found": 0, "inserted": 0, "skipped": 0, "partial": 0}
+            for s in sites
         },
         "failures": [],
         "skipped": [],
@@ -867,6 +996,7 @@ def scrape_aristas(
         return new
 
     breaker = CircuitBreaker()
+    route = ProxyRoute(proxies)
     max_retries = MAX_RETRIES if retry_failed else 0
     previous_site: str | None = None
     try:
@@ -885,12 +1015,17 @@ def scrape_aristas(
                 time.sleep(pause)
             previous_site = site
 
-            rows, error, attempts = run_search(job, breaker, proxies, max_retries)
-            if error:
+            rows, error, attempts = run_search(job, breaker, proxies, max_retries, route=route)
+            if error and rows:
+                # Éxito parcial: hubo filas aunque la paginación terminó en error.
+                site_stats["ok"] += 1
+                site_stats["partial"] += 1
+            elif error:
                 site_stats["failed"] += 1
-                stats["failures"].append(
-                    {"site": site, "profile": job["profile"], "keyword": term, "error": error}
-                )
+                stats["failures"].append({
+                    "site": site, "profile": job["profile"], "keyword": term, "error": error,
+                    "kind": classify_error(error),
+                })
                 log.warning("FALLO %s | %r | %d intento(s) | %s", site, label, attempts, error)
             else:
                 site_stats["ok"] += 1
@@ -918,6 +1053,7 @@ def scrape_aristas(
         finally:
             conn.close()
     stats["circuit_open"] = dict(breaker.open_causes)
+    stats["direct_sites"] = sorted(route.direct_sites)
     if stats["skipped"]:
         by_site: dict[str, list[str]] = {}
         for item in stats["skipped"]:
@@ -950,6 +1086,12 @@ def format_summary(stats: dict) -> str:
     if any(skipped.values()):
         lines.append("  Omitidas por circuit breaker: "
                      + ", ".join(f"{site}={n}" for site, n in skipped.items() if n))
+    partial = {site: s.get("partial", 0) for site, s in stats["per_site"].items()}
+    if any(partial.values()):
+        lines.append("  Éxitos parciales (filas + error, cuentan como ok): "
+                     + ", ".join(f"{site}={n}" for site, n in partial.items() if n))
+    if stats.get("direct_sites"):
+        lines.append("  Sitios que respondieron SIN proxies: " + ", ".join(stats["direct_sites"]))
     lines.append(f"  Filas nuevas en la base: {stats['inserted']}")
     return "\n".join(lines)
 

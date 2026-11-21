@@ -18,3 +18,7 @@ run_full.out
 viva/
 *.log
 .DS_Store
+
+*.db-journal
+*.db-wal
+*.db-shm

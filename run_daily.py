@@ -28,8 +28,10 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 BASE_DIR = Path(__file__).resolve().parent
+LOCAL_TZ = ZoneInfo("America/Mexico_City")
 LOG_DIR = BASE_DIR / "logs"
 VENV_PYTHON = BASE_DIR / ".venv" / "bin" / "python"
 TOP_IN_SUMMARY = 15
@@ -38,9 +40,14 @@ log = logging.getLogger("empleo")
 
 
 def setup_logging() -> Path:
-    """Log a logs/YYYY-MM-DD.log (se anexa) y a la consola."""
+    """Log a logs/YYYY-MM-DD.log (se anexa) y a la consola.
+
+    La fecha del nombre es la de America/Mexico_City (la misma que usan monitor.py y
+    autoapply.py); el host corre en UTC y después de las 18:00 CST el archivo caía en
+    "mañana", donde el monitor no lo busca.
+    """
     LOG_DIR.mkdir(exist_ok=True)
-    log_path = LOG_DIR / f"{datetime.now():%Y-%m-%d}.log"
+    log_path = LOG_DIR / f"{datetime.now(LOCAL_TZ):%Y-%m-%d}.log"
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
     file_handler = logging.FileHandler(log_path, encoding="utf-8")
     console = logging.StreamHandler(sys.stdout)
@@ -148,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:  # noqa: BLE001 - Firecrawl nunca tumba la corrida diaria
         log.exception("FALLO en Firecrawl; la corrida sigue con el filtro")
 
+    backup_before_rank(args.db)
     try:
         result = filter_rank.evaluate(args.db, keywords_file, all_rows=False)
     except Exception:  # noqa: BLE001
@@ -169,6 +177,46 @@ def main(argv: list[str] | None = None) -> int:
         log.error("FALLO TOTAL: ninguna búsqueda respondió en ninguna fuente.")
         return 1
     return 0
+
+
+BACKUP_DIR = BASE_DIR / "backups"
+RANK_BACKUP_PREFIX = "vacantes-pre-rank-"
+RANK_BACKUPS_KEEP = 7
+
+
+def backup_before_rank(db_path: str, backup_dir: Path | None = None,
+                       keep: int = RANK_BACKUPS_KEEP) -> Path | None:
+    """Copia consistente de la DB antes de filter_rank (reescribe score/estrellas/pasa_filtro
+    de todas las filas 'nueva'). Usa la API de backup de SQLite (segura con la DB abierta) y
+    conserva solo las ``keep`` copias más recientes de este prefijo; no toca otros backups.
+    Un fallo aquí se registra y NO detiene la corrida.
+    """
+    import sqlite3
+
+    backup_dir = Path(backup_dir) if backup_dir is not None else BACKUP_DIR
+    src_path = Path(db_path)
+    if not src_path.is_file():
+        return None
+    try:
+        backup_dir.mkdir(exist_ok=True)
+        dest = backup_dir / f"{RANK_BACKUP_PREFIX}{datetime.now():%Y%m%d-%H%M%S}.db"
+        src = sqlite3.connect(f"file:{src_path.resolve()}?mode=ro", uri=True)
+        try:
+            dst = sqlite3.connect(str(dest))
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
+        old = sorted(backup_dir.glob(f"{RANK_BACKUP_PREFIX}*.db"))[:-keep] if keep > 0 else []
+        for path in old:
+            path.unlink(missing_ok=True)
+        log.info("Backup previo al ranking: %s (se conservan %d)", dest, keep)
+        return dest
+    except Exception:  # noqa: BLE001 - el backup nunca tumba la corrida
+        log.exception("No se pudo respaldar %s antes del ranking; se sigue sin backup", db_path)
+        return None
 
 
 def run_monitor(db_path: str) -> None:
